@@ -40,10 +40,32 @@ pipeline {
                         sh 'sudo ln -s $HOME/bin/kubectl /usr/local/bin/kubectl'
                         sh 'sudo ln -s $HOME/bin/kind /usr/local/bin/kind'
                         dir('../kong-build-tools'){ sh 'make setup-ci' }
-                        dir('../kong-build-tools'){ sh 'make debug' }
                         sh 'export RESTY_IMAGE_TAG=trusty && make nightly-release'
                         sh 'export RESTY_IMAGE_TAG=xenial && make nightly-release'
                         sh 'export RESTY_IMAGE_TAG=bionic && make nightly-release'
+                    }
+                }
+                stage('Centos Releases') {
+                    agent {
+                        node {
+                            label 'docker-compose'
+                        }
+                    }
+                    environment {
+                        BUILDX = "false"
+                        PACKAGE_TYPE = 'rpm'
+                        RESTY_IMAGE_BASE = 'centos'
+                        KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
+                        KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
+                    }
+                    steps {
+                        sh 'make setup-kong-build-tools'
+                        sh 'mkdir -p $HOME/bin'
+                        sh 'sudo ln -s $HOME/bin/kubectl /usr/local/bin/kubectl'
+                        sh 'sudo ln -s $HOME/bin/kind /usr/local/bin/kind'
+                        dir('../kong-build-tools'){ sh 'make setup-ci' }
+                        sh 'export RESTY_IMAGE_TAG=6 && make nightly-release'
+                        sh 'export RESTY_IMAGE_TAG=6 && make nightly-release'
                     }
                 }
                 stage('Debian Releases') {
@@ -60,7 +82,6 @@ pipeline {
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
                     }
                     steps {
-                        sh 'printenv'
                         sh 'make setup-kong-build-tools'
                         sh 'mkdir -p $HOME/bin'
                         sh 'sudo ln -s $HOME/bin/kubectl /usr/local/bin/kubectl'
