@@ -26,7 +26,7 @@ pipeline {
                     environment {
                         PACKAGE_TYPE = 'deb'
                         RESTY_IMAGE_BASE = 'ubuntu'
-                        RESTY_IMAGE_TAG = 'trusty'
+                        RESTY_IMAGE_TAG = 'xenial'
                         KONG_SOURCE_LOCATION = "${env.WORKSPACE}"
                         KONG_BUILD_TOOLS_LOCATION = "${env.WORKSPACE}/../kong-build-tools"
                         AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
@@ -34,11 +34,13 @@ pipeline {
                         DOCKER_MACHINE_ARM64_NAME = "jenkins-kong-${env.BUILD_NUMBER}"
                     }
                     steps {
+                        sh 'printenv'
                         sh 'make setup-kong-build-tools'
                         sh 'mkdir -p $HOME/bin'
                         sh 'sudo ln -s $HOME/bin/kubectl /usr/local/bin/kubectl'
                         sh 'sudo ln -s $HOME/bin/kind /usr/local/bin/kind'
                         dir('../kong-build-tools'){ sh 'make setup-ci' }
+                        dir('../kong-build-tools'){ sh 'make debug' }
                         sh 'export RESTY_IMAGE_TAG=trusty && make nightly-release'
                         sh 'export RESTY_IMAGE_TAG=xenial && make nightly-release'
                         sh 'export RESTY_IMAGE_TAG=bionic && make nightly-release'
