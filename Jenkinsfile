@@ -32,22 +32,15 @@ pipeline {
                         AWS_ACCESS_KEY = credentials('AWS_ACCESS_KEY')
                         AWS_SECRET_ACCESS_KEY = credentials('AWS_SECRET_ACCESS_KEY')
                         DOCKER_MACHINE_ARM64_NAME = "jenkins-kong-${env.BUILD_NUMBER}"
-                        BUILDX=true
-                        BUILDX_INFO=""
                     }
                     steps {
-                        sh 'printenv'
                         sh 'make setup-kong-build-tools'
                         sh 'mkdir -p $HOME/bin'
                         sh 'sudo ln -s $HOME/bin/kubectl /usr/local/bin/kubectl'
                         sh 'sudo ln -s $HOME/bin/kind /usr/local/bin/kind'
                         dir('../kong-build-tools'){ sh 'make setup-ci' }
-                        sh 'sudo service docker restart'
-                        sh 'docker buildx version'
                         sh 'export RESTY_IMAGE_TAG=trusty && make nightly-release'
-                        dir('../kong-build-tools'){ sh 'make setup-tests' }
                         sh 'export RESTY_IMAGE_TAG=xenial && make nightly-release'
-                        dir('../kong-build-tools'){ sh 'make setup-tests' }
                         sh 'export RESTY_IMAGE_TAG=bionic && make nightly-release'
                     }
                 }
@@ -72,7 +65,6 @@ pipeline {
                         sh 'sudo ln -s $HOME/bin/kind /usr/local/bin/kind'
                         dir('../kong-build-tools'){ sh 'make setup-ci' }
                         sh 'export RESTY_IMAGE_TAG=jessie && make nightly-release'
-                        dir('../kong-build-tools'){ sh 'make setup-ci' }
                         sh 'export RESTY_IMAGE_TAG=stretch && make nightly-release'
                     }
                 }
