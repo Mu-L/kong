@@ -6,6 +6,7 @@ local cjson = require "cjson"
 local protoc = require "protoc"
 local pb = require "pb"
 local pl_path = require "pl.path"
+local date = require "date"
 
 local setmetatable = setmetatable
 
@@ -15,6 +16,7 @@ local bunpack = string.unpack     -- luacheck: ignore string
 local ngx = ngx
 local re_gsub = ngx.re.gsub
 local re_match = ngx.re.match
+local re_gmatch = ngx.re.gmatch
 
 local encode_json = cjson.encode
 
@@ -78,6 +80,47 @@ local function parse_options_path(path)
   return path_regex, match_groups
 end
 
+local function safe_set_type_hook(type, dec, enc)
+  if not pcall(pb.hook, type) then
+    ngx.log(ngx.NOTICE, "no type '" .. type .. "' defined")
+    return
+  end
+
+  if not pb.hook(type) then
+    pb.hook(type, dec)
+  end
+
+  if not pb.encode_hook(type) then
+    pb.encode_hook(type, enc)
+  end
+end
+
+local function set_hooks()
+  pb.option("enable_hooks")
+  local epoch = date.epoch()
+
+  safe_set_type_hook(
+      ".google.protobuf.Timestamp",
+      function (t)
+        if type(t) ~= "table" then
+          error(string.format("expected table, got (%s)%q", type(t), tostring(t)))
+        end
+
+        return date(t.seconds):fmt("${iso}")
+      end,
+      function (t)
+        if type(t) ~= "string" then
+          error (string.format("expected time string, got (%s)%q", type(t), tostring(t)))
+        end
+
+        local ds = date(t) - epoch
+        return {
+          seconds = ds:spanseconds(),
+          nanos = ds:getticks() * 1000,
+        }
+      end)
+end
+
 -- parse, compile and load .proto file
 -- returns a table mapping valid request URLs to input/output types
 local _proto_info = {}
@@ -89,8 +132,15 @@ local function get_proto_info(fname)
 
   local dir, name = pl_path.splitpath(pl_path.abspath(fname))
   local p = protoc.new()
+  p:addpath("/usr/include")
+  p:addpath("/usr/local/opt/protobuf/include/")
+  p:addpath("/usr/local/kong/lib/")
+  p:addpath("kong")
+
   p.include_imports = true
   p:addpath(dir)
+  p:loadfile(name)
+  set_hooks()
   local parsed = p:parsefile(name)
 
   info = {}
@@ -128,8 +178,6 @@ local function get_proto_info(fname)
   end
 
   _proto_info[fname] = info
-
-  p:loadfile(name)
   return info
 end
 
@@ -199,6 +247,26 @@ local function unframe(body)
   return body:sub(pos, frame_end), body:sub(frame_end + 1)
 end
 
+--[[
+  // Set value `v` at `path` in table `t`
+  // Path contains value address in dot-syntax. For example:
+  // `path="a.b.c"` would lead to `t[a][b][c] = v`.
+]]
+local function add_to_table( t, path, v )
+  local tab = t -- set up pointer to table root
+  for m in re_gmatch( path , "([^.]+)(\\.)?") do
+    local key, dot = m[1], m[2]
+
+    if dot then
+      tab[key] = tab[key] or {} -- create empty nested table if key does not exist
+      tab = tab[key]
+    else
+      tab[key] = v
+    end
+  end
+
+  return t
+end
 
 function deco:upstream(body)
   --[[
@@ -244,7 +312,14 @@ function deco:upstream(body)
     local args, err = ngx.req.get_uri_args()
     if not err then
       for k, v in pairs(args) do
-        payload[k] = v
+        --[[
+          // According to [spec](https://github.com/googleapis/googleapis/blob/master/google/api/http.proto#L113) 
+          // non-repeated message fields are supported. 
+          //
+          // For example: `GET /v1/messages/123456?revision=2&sub.subfield=foo`
+          // translates into `payload = { sub = { subfield = "foo" }}`
+        ]]--
+        add_to_table( payload, k, v )
       end
     end
   end

@@ -25,17 +25,17 @@ local plugins = {
   "bot-detection",
   "aws-lambda",
   "request-termination",
-  -- external plugins
-  "azure-functions",
-  "zipkin",
-  "pre-function",
-  "post-function",
   "prometheus",
   "proxy-cache",
   "session",
   "acme",
-  "grpc-web",
   "grpc-gateway",
+  "grpc-web",
+  "pre-function",
+  "post-function",
+  -- external plugins
+  "azure-functions",
+  "zipkin",
 }
 
 local plugin_map = {}

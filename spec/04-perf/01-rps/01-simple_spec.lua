@@ -1,5 +1,6 @@
 local perf = require("spec.helpers.perf")
 local split = require("pl.stringx").split
+local utils = require("spec.helpers.perf.utils")
 
 perf.set_log_level(ngx.DEBUG)
 --perf.set_retry_count(3)
@@ -29,6 +30,8 @@ local env_versions = os.getenv("PERF_TEST_VERSIONS")
 if env_versions then
   versions = split(env_versions, ",")
 end
+
+local LOAD_DURATION = 60
 
 local SERVICE_COUNT = 10
 local ROUTE_PER_SERVICE = 10
@@ -85,12 +88,10 @@ describe("perf test #baseline", function()
       perf.start_load({
         uri = upstream_uri,
         path = "/test",
-        connections = 1000,
+        connections = 100,
         threads = 5,
-        duration = 10,
+        duration = LOAD_DURATION,
       })
-
-      ngx.sleep(10)
 
       local result = assert(perf.wait_result())
 
@@ -103,6 +104,7 @@ describe("perf test #baseline", function()
 end)
 
 for _, version in ipairs(versions) do
+
   describe("perf test for Kong " .. version .. " #simple #no_plugins", function()
     local bp
     lazy_setup(function()
@@ -149,16 +151,16 @@ for _, version in ipairs(versions) do
     end)
 
     it("#single_route", function()
+      print_and_save("### Test Suite: " .. utils.get_test_descriptor())
+
       local results = {}
       for i=1,3 do
         perf.start_load({
           path = "/s1-r1",
-          connections = 1000,
+          connections = 100,
           threads = 5,
-          duration = 10,
+          duration = LOAD_DURATION,
         })
-
-        ngx.sleep(10)
 
         local result = assert(perf.wait_result())
 
@@ -168,20 +170,20 @@ for _, version in ipairs(versions) do
 
       print_and_save(("### Combined result for Kong %s:\n%s"):format(version, assert(perf.combine_results(results))))
 
-      perf.save_error_log("output/" .. version:gsub("[:/]", "#") .. "-single_route.log")
+      perf.save_error_log("output/" .. utils.get_test_output_filename() .. ".log")
     end)
 
     it(SERVICE_COUNT .. " services each has " .. ROUTE_PER_SERVICE .. " routes", function()
+      print_and_save("### Test Suite: " .. utils.get_test_descriptor())
+
       local results = {}
       for i=1,3 do
         perf.start_load({
-          connections = 1000,
+          connections = 100,
           threads = 5,
-          duration = 10,
+          duration = LOAD_DURATION,
           script = wrk_script,
         })
-
-        ngx.sleep(10)
 
         local result = assert(perf.wait_result())
 
@@ -191,7 +193,7 @@ for _, version in ipairs(versions) do
 
       print_and_save(("### Combined result for Kong %s:\n%s"):format(version, assert(perf.combine_results(results))))
 
-      perf.save_error_log("output/" .. version:gsub("[:/]", "#") .. "-multiple_routes.log")
+      perf.save_error_log("output/" .. utils.get_test_output_filename() .. ".log")
     end)
   end)
 
@@ -260,18 +262,20 @@ for _, version in ipairs(versions) do
       perf.teardown(os.getenv("PERF_TEST_TEARDOWN_ALL") or false)
     end)
 
-    it(SERVICE_COUNT .. " services each has  " .. ROUTE_PER_SERVICE .. " routes " ..
+    it(SERVICE_COUNT .. " services each has " .. ROUTE_PER_SERVICE .. " routes " ..
       "with key-auth, " .. CONSUMER_COUNT .. " consumers", function()
+
+      print_and_save("### Test Suite: " .. utils.get_test_descriptor())
+
       local results = {}
       for i=1,3 do
         perf.start_load({
-          connections = 1000,
+          connections = 100,
           threads = 5,
-          duration = 10,
+          duration = LOAD_DURATION,
           script = wrk_script,
         })
 
-        ngx.sleep(10)
 
         local result = assert(perf.wait_result())
 
@@ -281,7 +285,7 @@ for _, version in ipairs(versions) do
 
       print_and_save(("### Combined result for Kong %s:\n%s"):format(version, assert(perf.combine_results(results))))
 
-      perf.save_error_log("output/" .. version:gsub("[:/]", "#") .. "-key_auth.log")
+      perf.save_error_log("output/" .. utils.get_test_output_filename() .. ".log")
     end)
   end)
 end
