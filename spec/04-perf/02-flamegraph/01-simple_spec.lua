@@ -1,27 +1,10 @@
 local perf = require("spec.helpers.perf")
 local split = require("pl.stringx").split
+local utils = require("spec.helpers.perf.utils")
+local shell = require "resty.shell"
 
-perf.set_log_level(ngx.DEBUG)
---perf.set_retry_count(3)
-
-local driver = os.getenv("PERF_TEST_DRIVER") or "local"
-
-if driver == "terraform" then
-  perf.use_driver("terraform", {
-    provider = "equinix-metal",
-    tfvars = {
-      -- Kong Benchmarking
-      packet_project_id = os.getenv("PERF_TEST_PACKET_PROJECT_ID"),
-      -- TODO: use an org token
-      packet_auth_token = os.getenv("PERF_TEST_PACKET_AUTH_TOKEN"),
-      -- packet_plan = "baremetal_1",
-      -- packet_region = "sjc1",
-      -- packet_os = "ubuntu_20_04",
-    }
-  })
-else
-  perf.use_driver(driver)
-end
+perf.enable_charts(false) -- don't generate charts, we need flamegraphs only
+perf.use_defaults()
 
 local versions = {}
 
@@ -29,6 +12,8 @@ local env_versions = os.getenv("PERF_TEST_VERSIONS")
 if env_versions then
   versions = split(env_versions, ",")
 end
+
+local LOAD_DURATION = 180
 
 local SERVICE_COUNT = 10
 local ROUTE_PER_SERVICE = 10
@@ -54,20 +39,20 @@ local wrk_script = [[
   end
 ]]
 
-os.execute("mkdir -p output")
+shell.run("mkdir -p output", nil, 0)
 
 for _, version in ipairs(versions) do
   describe("perf test for Kong " .. version .. " #simple #no_plugins", function()
     local bp
     lazy_setup(function()
-      local helpers = perf.setup()
+      local helpers = perf.setup_kong(version)
 
       bp = helpers.get_db_utils("postgres", {
         "routes",
         "services",
-      })
+      }, nil, nil, true)
 
-      local upstream_uri = perf.start_upstream([[
+      local upstream_uri = perf.start_worker([[
       location = /test {
         return 200;
       }
@@ -89,8 +74,9 @@ for _, version in ipairs(versions) do
     end)
 
     before_each(function()
-      perf.start_kong(version, {
+      perf.start_kong({
         nginx_worker_processes = 1,
+        vitals = "off",
         --kong configs
       })
     end)
@@ -104,27 +90,27 @@ for _, version in ipairs(versions) do
     end)
 
     it(SERVICE_COUNT .. " services each has " .. ROUTE_PER_SERVICE .. " routes", function()
-      perf.start_stapxx("lj-lua-stacks.sxx", "--arg time=30")
+      perf.start_stapxx("lj-lua-stacks.sxx", "-D MAXMAPENTRIES=1000000 --arg time=" .. LOAD_DURATION)
 
       perf.start_load({
-        connections = 1000,
+        connections = 100,
         threads = 5,
-        duration = 30,
+        duration = LOAD_DURATION,
         script = wrk_script,
       })
 
-      ngx.sleep(30)
+      ngx.sleep(LOAD_DURATION)
 
       local result = assert(perf.wait_result())
 
       print(("### Result for Kong %s:\n%s"):format(version, result))
 
       perf.generate_flamegraph(
-        "output/" .. version:gsub("[:/]", "#") .. "-simple.svg",
-        "Flame graph for Kong " .. version .. " #simple #no_plugins"
+        "output/" .. utils.get_test_output_filename() .. ".svg",
+        "Flame graph for Kong " .. utils.get_test_descriptor()
       )
 
-      perf.save_error_log("output/" .. version:gsub("[:/]", "#") .. "-simple.log")
+      perf.save_error_log("output/" .. utils.get_test_output_filename() .. ".log")
     end)
   end)
 end
